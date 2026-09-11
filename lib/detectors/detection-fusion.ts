@@ -12,6 +12,14 @@ import { detectGTM } from "./gtm-detector";
 import { detectGA4 } from "./ga4-detector";
 import { detectFloodlight } from "./floodlight-detector";
 import { detectDataLayer } from "./datalayer-detector";
+import { detectOneTrust } from "./onetrust-detector";
+import { detectDidomi } from "./didomi-detector";
+import { detectAxeptio } from "./axeptio-detector";
+import { detectCookiebot } from "./cookiebot-detector";
+import {
+  detectGoogleConsentMode,
+} from "./google-consent-mode-detector";
+import { detectTCFAPI } from "./tcf-api-detector";
 
 type DetectorFactory = (
   html: string
@@ -25,7 +33,27 @@ const detectorFactories: Record<
   ga4: detectGA4,
   floodlight: detectFloodlight,
   datalayer: detectDataLayer,
+  onetrust: detectOneTrust,
+  didomi: detectDidomi,
+  axeptio: detectAxeptio,
+  cookiebot: detectCookiebot,
+
+  "google-consent-mode":
+    detectGoogleConsentMode,
+
+  "tcf-api":
+    detectTCFAPI,
 };
+
+const EXPLICIT_CONSENT_KEYS =
+  new Set<string>([
+    "onetrust",
+    "didomi",
+    "axeptio",
+    "cookiebot",
+    "google-consent-mode",
+    "tcf-api",
+  ]);
 
 const certaintyRank: Record<
   CertaintyLevel,
@@ -36,31 +64,35 @@ const certaintyRank: Record<
   Élevé: 3,
 };
 
-const INTERNAL_GTM_EVENTS = new Set([
-  "gtm.js",
-  "gtm.dom",
-  "gtm.load",
-  "gtm.click",
-  "gtm.linkclick",
-  "gtm.scrolldepth",
-  "gtm.historychange",
-]);
+const INTERNAL_GTM_EVENTS =
+  new Set([
+    "gtm.js",
+    "gtm.dom",
+    "gtm.load",
+    "gtm.click",
+    "gtm.linkclick",
+    "gtm.scrolldepth",
+    "gtm.historychange",
+  ]);
 
-const ECOMMERCE_EVENTS = new Set([
-  "view_item",
-  "view_item_list",
-  "select_item",
-  "add_to_cart",
-  "remove_from_cart",
-  "view_cart",
-  "begin_checkout",
-  "add_shipping_info",
-  "add_payment_info",
-  "purchase",
-  "refund",
-]);
+const ECOMMERCE_EVENTS =
+  new Set([
+    "view_item",
+    "view_item_list",
+    "select_item",
+    "add_to_cart",
+    "remove_from_cart",
+    "view_cart",
+    "begin_checkout",
+    "add_shipping_info",
+    "add_payment_info",
+    "purchase",
+    "refund",
+  ]);
 
-function unique(values: string[]): string[] {
+function unique(
+  values: string[]
+): string[] {
   return [
     ...new Set(
       values.filter(Boolean)
@@ -106,7 +138,9 @@ function isInternalGTMEvent(
     event.toLowerCase();
 
   return (
-    normalizedEvent.startsWith("gtm.") ||
+    normalizedEvent.startsWith(
+      "gtm."
+    ) ||
     INTERNAL_GTM_EVENTS.has(
       normalizedEvent
     )
@@ -130,21 +164,26 @@ function isEcommerceEvent(
 }
 
 /**
- * Fusionne les informations statiques du
- * DataLayer avec les événements et signaux
- * réellement observés par Playwright.
+ * Fusionne les informations statiques
+ * du DataLayer avec les événements et
+ * signaux observés par Playwright.
  */
 function enrichDataLayerDetails(
-  baseDetails: Record<string, unknown>,
-  dynamicDetails: Record<string, unknown>
-): Record<string, unknown> {
-  const staticEvents = getStringArray(
-    baseDetails.allEvents
-  );
+  baseDetails:
+    Record<string, unknown>,
 
-  const dynamicEvents = getStringArray(
-    dynamicDetails.events
-  );
+  dynamicDetails:
+    Record<string, unknown>
+): Record<string, unknown> {
+  const staticEvents =
+    getStringArray(
+      baseDetails.allEvents
+    );
+
+  const dynamicEvents =
+    getStringArray(
+      dynamicDetails.events
+    );
 
   const allEvents = unique([
     ...staticEvents,
@@ -157,25 +196,29 @@ function enrichDataLayerDetails(
     );
 
   /*
-   * Les événements de consentement sont
-   * techniques et ne sont donc pas considérés
-   * comme des événements métier.
+   * Les événements de consentement
+   * sont techniques et ne sont pas
+   * considérés comme métier.
    */
   const businessEvents =
     allEvents.filter(
       (event) =>
-        !isInternalGTMEvent(event) &&
+        !isInternalGTMEvent(
+          event
+        ) &&
         !isConsentEvent(event)
     );
 
   const dynamicConsentSignals =
     getStringArray(
-      dynamicDetails.consentSignals
+      dynamicDetails
+        .consentSignals
     );
 
   const existingConsentEvidence =
     getStringArray(
-      baseDetails.consentSignalEvidence
+      baseDetails
+        .consentSignalEvidence
     );
 
   const consentSignalEvidence =
@@ -185,13 +228,21 @@ function enrichDataLayerDetails(
     ]);
 
   const consentSignals =
-    baseDetails.consentSignals === true ||
-    consentSignalEvidence.length > 0 ||
-    allEvents.some(isConsentEvent);
+    baseDetails
+      .consentSignals === true ||
+    consentSignalEvidence.length >
+      0 ||
+    allEvents.some(
+      isConsentEvent
+    );
 
   const ecommerceDetected =
-    baseDetails.ecommerceDetected === true ||
-    allEvents.some(isEcommerceEvent);
+    baseDetails
+      .ecommerceDetected ===
+      true ||
+    allEvents.some(
+      isEcommerceEvent
+    );
 
   const dynamicEntryCount =
     getNumber(
@@ -201,8 +252,16 @@ function enrichDataLayerDetails(
   return {
     ...baseDetails,
 
+    /*
+     * Les preuves dynamiques deviennent
+     * également disponibles directement
+     * dans les détails normalisés.
+     */
+    ...dynamicDetails,
+
     windowDataLayerDetected:
-      baseDetails.windowDataLayerDetected ===
+      baseDetails
+        .windowDataLayerDetected ===
         true ||
       dynamicEntryCount > 0,
 
@@ -210,9 +269,12 @@ function enrichDataLayerDetails(
     internalEvents,
     businessEvents,
 
-    eventCount: allEvents.length,
+    eventCount:
+      allEvents.length,
+
     internalEventCount:
       internalEvents.length,
+
     businessEventCount:
       businessEvents.length,
 
@@ -223,20 +285,35 @@ function enrichDataLayerDetails(
 }
 
 function createDetails(
-  baseDetails: Record<string, unknown>,
+  baseDetails:
+    Record<string, unknown>,
+
   dynamicTechnology:
     DynamicTechnologyEvidence,
+
   staticDetected: boolean
 ): Record<string, unknown> {
   const commonDetails:
     Record<string, unknown> = {
       ...baseDetails,
 
+      /*
+       * Les valeurs observées par Playwright
+       * deviennent directement accessibles
+       * au rapport et au scoring.
+       */
+      ...dynamicTechnology.details,
+
       detectionModes: {
-        static: staticDetected,
+        static:
+          staticDetected,
         dynamic: true,
       },
 
+      /*
+       * La preuve brute est également
+       * conservée pour l’analyse technique.
+       */
       dynamicEvidence:
         dynamicTechnology.details,
     };
@@ -263,29 +340,34 @@ function createDynamicTool(
       dynamicTechnology.key
     ];
 
-  const template = detector("");
+  const template =
+    detector("");
 
   return {
     ...template,
 
     present: true,
 
-    status: "Détecté directement",
+    status:
+      "Détecté directement",
 
     ids: [
       ...dynamicTechnology.ids,
     ],
 
     evidence: [
-      ...dynamicTechnology.evidence,
+      ...dynamicTechnology
+        .evidence,
     ],
 
     sources: [
-      ...dynamicTechnology.sources,
+      ...dynamicTechnology
+        .sources,
     ],
 
     certainty:
-      dynamicTechnology.certainty,
+      dynamicTechnology
+        .certainty,
 
     details: createDetails(
       template.details ?? {},
@@ -296,7 +378,9 @@ function createDynamicTool(
 }
 
 function mergeTool(
-  staticTool: AnalyticsToolDetection,
+  staticTool:
+    AnalyticsToolDetection,
+
   dynamicTechnology:
     DynamicTechnologyEvidence
 ): AnalyticsToolDetection {
@@ -308,7 +392,8 @@ function mergeTool(
 
     present: true,
 
-    status: "Détecté directement",
+    status:
+      "Détecté directement",
 
     ids: unique([
       ...staticTool.ids,
@@ -317,18 +402,22 @@ function mergeTool(
 
     evidence: unique([
       ...staticTool.evidence,
-      ...dynamicTechnology.evidence,
+      ...dynamicTechnology
+        .evidence,
     ]),
 
     sources: unique([
       ...staticTool.sources,
-      ...dynamicTechnology.sources,
+      ...dynamicTechnology
+        .sources,
     ]),
 
-    certainty: strongestCertainty(
-      staticTool.certainty,
-      dynamicTechnology.certainty
-    ),
+    certainty:
+      strongestCertainty(
+        staticTool.certainty,
+        dynamicTechnology
+          .certainty
+      ),
 
     details: createDetails(
       staticTool.details ?? {},
@@ -341,6 +430,7 @@ function mergeTool(
 export function fuseDetections(
   staticTools:
     AnalyticsToolDetection[],
+
   dynamicTechnologies:
     DynamicTechnologyEvidence[]
 ): AnalyticsToolDetection[] {
@@ -352,7 +442,9 @@ export function fuseDetections(
       ): AnalyticsToolDetection => ({
         ...tool,
 
-        ids: [...tool.ids],
+        ids: [
+          ...tool.ids,
+        ],
 
         evidence: [
           ...tool.evidence,
@@ -363,22 +455,25 @@ export function fuseDetections(
         ],
 
         details: tool.details
-          ? { ...tool.details }
+          ? {
+              ...tool.details,
+            }
           : undefined,
       })
     );
 
-  const toolIndexByKey = new Map<
-    string,
-    number
-  >(
-    fusedTools.map(
-      (tool, index) => [
-        tool.key,
-        index,
-      ]
-    )
-  );
+  const toolIndexByKey =
+    new Map<
+      string,
+      number
+    >(
+      fusedTools.map(
+        (tool, index) => [
+          tool.key,
+          index,
+        ]
+      )
+    );
 
   for (
     const dynamicTechnology of
@@ -390,7 +485,8 @@ export function fuseDetections(
       );
 
     if (
-      existingIndex === undefined
+      existingIndex ===
+      undefined
     ) {
       const dynamicTool =
         createDynamicTool(
@@ -409,11 +505,35 @@ export function fuseDetections(
       continue;
     }
 
-    fusedTools[existingIndex] =
-      mergeTool(
-        fusedTools[existingIndex],
-        dynamicTechnology
-      );
+    fusedTools[
+      existingIndex
+    ] = mergeTool(
+      fusedTools[
+        existingIndex
+      ],
+      dynamicTechnology
+    );
+  }
+
+  /*
+   * Lorsqu’une CMP ou un mécanisme
+   * précis est identifié, la détection
+   * générique "consent" est retirée.
+   */
+  const hasExplicitConsent =
+    fusedTools.some(
+      (tool) =>
+        tool.present &&
+        EXPLICIT_CONSENT_KEYS.has(
+          tool.key
+        )
+    );
+
+  if (hasExplicitConsent) {
+    return fusedTools.filter(
+      (tool) =>
+        tool.key !== "consent"
+    );
   }
 
   return fusedTools;

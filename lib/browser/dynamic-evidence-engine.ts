@@ -7,11 +7,21 @@ import type {
   NetworkObservation,
 } from "./browser-engine";
 
+import {
+  detectDynamicConsentTechnologies,
+} from "./cmp-evidence-engine";
+
 export type DynamicTechnologyKey =
   | "gtm"
   | "ga4"
   | "floodlight"
-  | "datalayer";
+  | "datalayer"
+  | "onetrust"
+  | "didomi"
+  | "axeptio"
+  | "cookiebot"
+  | "google-consent-mode"
+  | "tcf-api";
 
 export interface DynamicTechnologyEvidence {
   key: DynamicTechnologyKey;
@@ -36,9 +46,25 @@ interface SourceFlags {
   dataLayer?: boolean;
 }
 
-const GTM_ID_PATTERN = /\bGTM-[A-Z0-9]+\b/gi;
-const GA4_ID_PATTERN = /\bG-[A-Z0-9]{5,}\b/gi;
-const FLOODLIGHT_ID_PATTERN = /\bDC-\d+\b/gi;
+const GTM_ID_PATTERN =
+  /\bGTM-[A-Z0-9]+\b/gi;
+
+const GA4_ID_PATTERN =
+  /\bG-[A-Z0-9]{5,}\b/gi;
+
+const FLOODLIGHT_ID_PATTERN =
+  /\bDC-\d+\b/gi;
+
+/*
+ * Versions sans le flag global.
+ * Elles évitent les résultats irréguliers
+ * lorsque RegExp.test() est appelé plusieurs fois.
+ */
+const GA4_ID_TEST_PATTERN =
+  /\bG-[A-Z0-9]{5,}\b/i;
+
+const FLOODLIGHT_ID_TEST_PATTERN =
+  /\bDC-\d+\b/i;
 
 const GTM_URL_PATTERN =
   /googletagmanager\.com\/gtm\.js/i;
@@ -49,8 +75,14 @@ const GA4_URL_PATTERN =
 const FLOODLIGHT_URL_PATTERN =
   /doubleclick|googlesyndication\.com|\/ddm\/activity|(?:id|tid)=DC-/i;
 
-function unique(values: string[]): string[] {
-  return [...new Set(values.filter(Boolean))];
+function unique(
+  values: string[]
+): string[] {
+  return [
+    ...new Set(
+      values.filter(Boolean)
+    ),
+  ];
 }
 
 function extractIds(
@@ -59,7 +91,8 @@ function extractIds(
 ): string[] {
   return unique(
     values.flatMap(
-      (value) => value.match(pattern) ?? []
+      (value) =>
+        value.match(pattern) ?? []
     )
   );
 }
@@ -72,43 +105,55 @@ function extractFloodlightIds(
     FLOODLIGHT_ID_PATTERN
   );
 
-  const sourceIds = values.flatMap((value) => {
-    if (!FLOODLIGHT_URL_PATTERN.test(value)) {
-      return [];
-    }
+  const sourceIds =
+    values.flatMap((value) => {
+      if (
+        !FLOODLIGHT_URL_PATTERN.test(
+          value
+        )
+      ) {
+        return [];
+      }
 
-    const match = value.match(
-      /(?:\/|[?;&])src=(\d+)/i
-    );
+      const match = value.match(
+        /(?:\/|[?;&])src=(\d+)/i
+      );
 
-    return match?.[1]
-      ? [`DC-${match[1]}`]
-      : [];
-  });
+      return match?.[1]
+        ? [`DC-${match[1]}`]
+        : [];
+    });
 
-  return unique([...directIds, ...sourceIds]);
+  return unique([
+    ...directIds,
+    ...sourceIds,
+  ]);
 }
 
 function getDataLayerEvents(
   entries: unknown[]
 ): string[] {
-  const events = entries.flatMap((entry) => {
-    if (
-      typeof entry !== "object" ||
-      entry === null ||
-      !("event" in entry)
-    ) {
-      return [];
-    }
+  const events =
+    entries.flatMap((entry) => {
+      if (
+        typeof entry !== "object" ||
+        entry === null ||
+        !("event" in entry)
+      ) {
+        return [];
+      }
 
-    const event = (
-      entry as Record<string, unknown>
-    ).event;
+      const event = (
+        entry as Record<
+          string,
+          unknown
+        >
+      ).event;
 
-    return typeof event === "string"
-      ? [event]
-      : [];
-  });
+      return typeof event === "string"
+        ? [event]
+        : [];
+    });
 
   return unique(events);
 }
@@ -126,30 +171,47 @@ function getConsentSignals(
 
   const signals: string[] = [];
 
-  for (const observation of result.networkObservations) {
+  for (
+    const observation of
+    result.networkObservations
+  ) {
     try {
-      const url = new URL(observation.url);
+      const url = new URL(
+        observation.url
+      );
 
-      for (const parameter of consentParameters) {
+      for (
+        const parameter of
+        consentParameters
+      ) {
         for (
           const value of
-          url.searchParams.getAll(parameter)
+          url.searchParams.getAll(
+            parameter
+          )
         ) {
-          signals.push(`${parameter}=${value}`);
+          signals.push(
+            `${parameter}=${value}`
+          );
         }
       }
     } catch {
       /*
-       * Certaines URLs de tracking utilisent
-       * des paramètres intégrés au chemin.
+       * Certaines URLs de tracking
+       * utilisent des paramètres intégrés
+       * au chemin.
        */
-      for (const parameter of consentParameters) {
-        const match = observation.url.match(
-          new RegExp(
-            `(?:[?;&]|/)${parameter}=([^;&]+)`,
-            "i"
-          )
-        );
+      for (
+        const parameter of
+        consentParameters
+      ) {
+        const match =
+          observation.url.match(
+            new RegExp(
+              `(?:[?;&]|/)${parameter}=([^;&]+)`,
+              "i"
+            )
+          );
 
         if (match?.[1]) {
           signals.push(
@@ -165,7 +227,8 @@ function getConsentSignals(
   if (
     dataLayerEvents.some(
       (event) =>
-        event.toLowerCase() === "gdprconsent"
+        event.toLowerCase() ===
+        "gdprconsent"
     )
   ) {
     signals.push(
@@ -182,15 +245,21 @@ function getSources(
   const sources: string[] = [];
 
   if (flags.runtime) {
-    sources.push("Runtime JavaScript");
+    sources.push(
+      "Runtime JavaScript"
+    );
   }
 
   if (flags.script) {
-    sources.push("Rendered scripts");
+    sources.push(
+      "Rendered scripts"
+    );
   }
 
   if (flags.network) {
-    sources.push("Network requests");
+    sources.push(
+      "Network requests"
+    );
   }
 
   if (flags.dataLayer) {
@@ -215,58 +284,80 @@ function getCertainty(
 }
 
 function filterNetworkObservations(
-  observations: NetworkObservation[],
+  observations:
+    NetworkObservation[],
   pattern: RegExp
 ): NetworkObservation[] {
-  return observations.filter((observation) =>
-    pattern.test(observation.url)
+  return observations.filter(
+    (observation) =>
+      pattern.test(
+        observation.url
+      )
   );
 }
 
 function getNetworkDetails(
-  observations: NetworkObservation[]
+  observations:
+    NetworkObservation[]
 ): Record<string, number> {
   return {
-    observed: observations.length,
+    observed:
+      observations.length,
 
-    completed: observations.filter(
-      (observation) =>
-        observation.state === "completed"
-    ).length,
+    completed:
+      observations.filter(
+        (observation) =>
+          observation.state ===
+          "completed"
+      ).length,
 
-    failed: observations.filter(
-      (observation) =>
-        observation.state === "failed"
-    ).length,
+    failed:
+      observations.filter(
+        (observation) =>
+          observation.state ===
+          "failed"
+      ).length,
 
-    pending: observations.filter(
-      (observation) =>
-        observation.state === "pending"
-    ).length,
+    pending:
+      observations.filter(
+        (observation) =>
+          observation.state ===
+          "pending"
+      ).length,
 
-    responseReceived: observations.filter(
-      (observation) =>
-        observation.httpStatus !== null
-    ).length,
+    responseReceived:
+      observations.filter(
+        (observation) =>
+          observation.httpStatus !==
+          null
+      ).length,
 
-    httpErrors: observations.filter(
-      (observation) =>
-        observation.httpStatus !== null &&
-        observation.httpStatus >= 400
-    ).length,
+    httpErrors:
+      observations.filter(
+        (observation) =>
+          observation.httpStatus !==
+            null &&
+          observation.httpStatus >=
+            400
+      ).length,
   };
 }
 
 function getNetworkEvidence(
   technology: string,
-  observations: NetworkObservation[]
+  observations:
+    NetworkObservation[]
 ): string[] {
-  if (observations.length === 0) {
+  if (
+    observations.length === 0
+  ) {
     return [];
   }
 
   const details =
-    getNetworkDetails(observations);
+    getNetworkDetails(
+      observations
+    );
 
   return [
     `${technology}: ${details.observed} requête(s) observée(s), ${details.completed} terminée(s), ${details.failed} échouée(s) et ${details.responseReceived} avec une réponse HTTP.`,
@@ -278,23 +369,23 @@ export class DynamicEvidenceEngine {
     result: BrowserAnalysisResult
   ): DynamicEvidenceResult {
     const technologies:
-      DynamicTechnologyEvidence[] = [];
+      DynamicTechnologyEvidence[] =
+      [];
 
     const allUrls = unique([
       ...result.scripts,
+
       ...result.networkObservations.map(
-        (observation) => observation.url
+        (observation) =>
+          observation.url
       ),
     ]);
 
     const dataLayerEvents =
-      getDataLayerEvents(result.dataLayer);
+      getDataLayerEvents(
+        result.dataLayer
+      );
 
-    /*
-     * Le calcul est maintenant effectué une seule fois,
-     * puis partagé avec la détection DataLayer et
-     * le résultat global du Dynamic Evidence Engine.
-     */
     const consentSignals =
       getConsentSignals(
         result,
@@ -304,14 +395,17 @@ export class DynamicEvidenceEngine {
     /*
      * Google Tag Manager
      */
-    const gtmIds = extractIds(
-      allUrls,
-      GTM_ID_PATTERN
-    );
+    const gtmIds =
+      extractIds(
+        allUrls,
+        GTM_ID_PATTERN
+      );
 
-    const gtmScripts = result.scripts.filter(
-      (url) => GTM_URL_PATTERN.test(url)
-    );
+    const gtmScripts =
+      result.scripts.filter(
+        (url) =>
+          GTM_URL_PATTERN.test(url)
+      );
 
     const gtmNetwork =
       filterNetworkObservations(
@@ -319,15 +413,26 @@ export class DynamicEvidenceEngine {
         GTM_URL_PATTERN
       );
 
-    const gtmSources = getSources({
-      runtime:
-        result.runtimeGlobals.googleTagManager,
-      script: gtmScripts.length > 0,
-      network: gtmNetwork.length > 0,
-      dataLayer: dataLayerEvents.some((event) =>
-        event.startsWith("gtm.")
-      ),
-    });
+    const gtmSources =
+      getSources({
+        runtime:
+          result.runtimeGlobals
+            .googleTagManager,
+
+        script:
+          gtmScripts.length > 0,
+
+        network:
+          gtmNetwork.length > 0,
+
+        dataLayer:
+          dataLayerEvents.some(
+            (event) =>
+              event.startsWith(
+                "gtm."
+              )
+          ),
+      });
 
     if (
       gtmIds.length > 0 ||
@@ -341,7 +446,8 @@ export class DynamicEvidenceEngine {
             ]
           : []),
 
-        ...(gtmScripts.length > 0
+        ...(gtmScripts.length >
+        0
           ? [
               `${gtmScripts.length} script(s) GTM chargé(s) dans le DOM rendu.`,
             ]
@@ -352,8 +458,11 @@ export class DynamicEvidenceEngine {
           gtmNetwork
         ),
 
-        ...(dataLayerEvents.some((event) =>
-          event.startsWith("gtm.")
+        ...(dataLayerEvents.some(
+          (event) =>
+            event.startsWith(
+              "gtm."
+            )
         )
           ? [
               "Des événements de cycle de vie GTM sont présents dans le DataLayer.",
@@ -367,13 +476,26 @@ export class DynamicEvidenceEngine {
         ids: gtmIds,
         evidence,
         sources: gtmSources,
-        certainty: getCertainty(gtmSources),
+        certainty:
+          getCertainty(
+            gtmSources
+          ),
+
         details: {
-          scripts: gtmScripts.length,
-          network: getNetworkDetails(gtmNetwork),
+          scripts:
+            gtmScripts.length,
+
+          network:
+            getNetworkDetails(
+              gtmNetwork
+            ),
+
           dataLayerEvents:
-            dataLayerEvents.filter((event) =>
-              event.startsWith("gtm.")
+            dataLayerEvents.filter(
+              (event) =>
+                event.startsWith(
+                  "gtm."
+                )
             ),
         },
       });
@@ -382,16 +504,22 @@ export class DynamicEvidenceEngine {
     /*
      * Google Analytics 4
      */
-    const ga4Ids = extractIds(
-      allUrls,
-      GA4_ID_PATTERN
-    );
+    const ga4Ids =
+      extractIds(
+        allUrls,
+        GA4_ID_PATTERN
+      );
 
-    const ga4Scripts = result.scripts.filter(
-      (url) =>
-        GA4_ID_PATTERN.test(url) &&
-        /googletagmanager\.com\/gtag/i.test(url)
-    );
+    const ga4Scripts =
+      result.scripts.filter(
+        (url) =>
+          GA4_ID_TEST_PATTERN.test(
+            url
+          ) &&
+          /googletagmanager\.com\/gtag/i.test(
+            url
+          )
+      );
 
     const ga4Network =
       filterNetworkObservations(
@@ -399,11 +527,17 @@ export class DynamicEvidenceEngine {
         GA4_URL_PATTERN
       );
 
-    const ga4Sources = getSources({
-      runtime: result.runtimeGlobals.gtag,
-      script: ga4Scripts.length > 0,
-      network: ga4Network.length > 0,
-    });
+    const ga4Sources =
+      getSources({
+        runtime:
+          result.runtimeGlobals.gtag,
+
+        script:
+          ga4Scripts.length > 0,
+
+        network:
+          ga4Network.length > 0,
+      });
 
     if (
       ga4Ids.length > 0 ||
@@ -416,7 +550,8 @@ export class DynamicEvidenceEngine {
             ]
           : []),
 
-        ...(ga4Scripts.length > 0
+        ...(ga4Scripts.length >
+        0
           ? [
               `${ga4Scripts.length} script(s) GA4 chargé(s).`,
             ]
@@ -434,10 +569,19 @@ export class DynamicEvidenceEngine {
         ids: ga4Ids,
         evidence,
         sources: ga4Sources,
-        certainty: getCertainty(ga4Sources),
+        certainty:
+          getCertainty(
+            ga4Sources
+          ),
+
         details: {
-          scripts: ga4Scripts.length,
-          network: getNetworkDetails(ga4Network),
+          scripts:
+            ga4Scripts.length,
+
+          network:
+            getNetworkDetails(
+              ga4Network
+            ),
         },
       });
     }
@@ -446,11 +590,16 @@ export class DynamicEvidenceEngine {
      * Floodlight
      */
     const floodlightIds =
-      extractFloodlightIds(allUrls);
+      extractFloodlightIds(
+        allUrls
+      );
 
     const floodlightScripts =
-      result.scripts.filter((url) =>
-        FLOODLIGHT_ID_PATTERN.test(url)
+      result.scripts.filter(
+        (url) =>
+          FLOODLIGHT_ID_TEST_PATTERN.test(
+            url
+          )
       );
 
     const floodlightNetwork =
@@ -459,17 +608,24 @@ export class DynamicEvidenceEngine {
         FLOODLIGHT_URL_PATTERN
       );
 
-    const floodlightSources = getSources({
-      script: floodlightScripts.length > 0,
-      network: floodlightNetwork.length > 0,
-    });
+    const floodlightSources =
+      getSources({
+        script:
+          floodlightScripts.length >
+          0,
+
+        network:
+          floodlightNetwork.length >
+          0,
+      });
 
     if (
       floodlightIds.length > 0 ||
       floodlightNetwork.length > 0
     ) {
       const evidence = [
-        ...(floodlightScripts.length > 0
+        ...(floodlightScripts
+          .length > 0
           ? [
               `${floodlightScripts.length} script(s) Floodlight chargé(s).`,
             ]
@@ -486,13 +642,21 @@ export class DynamicEvidenceEngine {
         present: true,
         ids: floodlightIds,
         evidence,
-        sources: floodlightSources,
+        sources:
+          floodlightSources,
         certainty:
-          getCertainty(floodlightSources),
+          getCertainty(
+            floodlightSources
+          ),
+
         details: {
-          scripts: floodlightScripts.length,
+          scripts:
+            floodlightScripts.length,
+
           network:
-            getNetworkDetails(floodlightNetwork),
+            getNetworkDetails(
+              floodlightNetwork
+            ),
         },
       });
     }
@@ -500,29 +664,39 @@ export class DynamicEvidenceEngine {
     /*
      * Google DataLayer
      */
-    const dataLayerSources = getSources({
-      runtime: result.runtimeGlobals.dataLayer,
-      dataLayer: result.dataLayer.length > 0,
-    });
+    const dataLayerSources =
+      getSources({
+        runtime:
+          result.runtimeGlobals
+            .dataLayer,
+
+        dataLayer:
+          result.dataLayer.length >
+          0,
+      });
 
     if (
-      result.runtimeGlobals.dataLayer ||
+      result.runtimeGlobals
+        .dataLayer ||
       result.dataLayer.length > 0
     ) {
       const evidence = [
-        ...(result.runtimeGlobals.dataLayer
+        ...(result.runtimeGlobals
+          .dataLayer
           ? [
               "La variable runtime dataLayer est présente.",
             ]
           : []),
 
-        ...(result.dataLayer.length > 0
+        ...(result.dataLayer
+          .length > 0
           ? [
               `${result.dataLayer.length} entrée(s) capturée(s) dans le DataLayer.`,
             ]
           : []),
 
-        ...(dataLayerEvents.length > 0
+        ...(dataLayerEvents.length >
+        0
           ? [
               `Événements observés : ${dataLayerEvents.join(
                 ", "
@@ -530,7 +704,8 @@ export class DynamicEvidenceEngine {
             ]
           : []),
 
-        ...(consentSignals.length > 0
+        ...(consentSignals.length >
+        0
           ? [
               `Signaux de consentement observés : ${consentSignals.join(
                 ", "
@@ -544,16 +719,40 @@ export class DynamicEvidenceEngine {
         present: true,
         ids: [],
         evidence,
-        sources: dataLayerSources,
+        sources:
+          dataLayerSources,
         certainty:
-          getCertainty(dataLayerSources),
+          getCertainty(
+            dataLayerSources
+          ),
+
         details: {
-          entryCount: result.dataLayer.length,
-          events: dataLayerEvents,
+          entryCount:
+            result.dataLayer.length,
+
+          events:
+            dataLayerEvents,
+
           consentSignals,
         },
       });
     }
+
+    /*
+     * CMP et mécanismes de consentement :
+     * OneTrust, Didomi, Axeptio,
+     * Cookiebot, Google Consent Mode
+     * et IAB TCF.
+     */
+    const consentTechnologies =
+      detectDynamicConsentTechnologies(
+        result,
+        consentSignals
+      );
+
+    technologies.push(
+      ...consentTechnologies
+    );
 
     return {
       technologies,
