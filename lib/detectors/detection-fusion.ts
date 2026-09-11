@@ -36,8 +36,57 @@ const certaintyRank: Record<
   Élevé: 3,
 };
 
+const INTERNAL_GTM_EVENTS = new Set([
+  "gtm.js",
+  "gtm.dom",
+  "gtm.load",
+  "gtm.click",
+  "gtm.linkclick",
+  "gtm.scrolldepth",
+  "gtm.historychange",
+]);
+
+const ECOMMERCE_EVENTS = new Set([
+  "view_item",
+  "view_item_list",
+  "select_item",
+  "add_to_cart",
+  "remove_from_cart",
+  "view_cart",
+  "begin_checkout",
+  "add_shipping_info",
+  "add_payment_info",
+  "purchase",
+  "refund",
+]);
+
 function unique(values: string[]): string[] {
-  return [...new Set(values.filter(Boolean))];
+  return [
+    ...new Set(
+      values.filter(Boolean)
+    ),
+  ];
+}
+
+function getStringArray(
+  value: unknown
+): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter(
+    (item): item is string =>
+      typeof item === "string"
+  );
+}
+
+function getNumber(
+  value: unknown
+): number | undefined {
+  return typeof value === "number"
+    ? value
+    : undefined;
 }
 
 function strongestCertainty(
@@ -50,11 +99,169 @@ function strongestCertainty(
     : second;
 }
 
+function isInternalGTMEvent(
+  event: string
+): boolean {
+  const normalizedEvent =
+    event.toLowerCase();
+
+  return (
+    normalizedEvent.startsWith("gtm.") ||
+    INTERNAL_GTM_EVENTS.has(
+      normalizedEvent
+    )
+  );
+}
+
+function isConsentEvent(
+  event: string
+): boolean {
+  return /consent|gdpr|cookie|optanon|didomi|onetrust/i.test(
+    event
+  );
+}
+
+function isEcommerceEvent(
+  event: string
+): boolean {
+  return ECOMMERCE_EVENTS.has(
+    event.toLowerCase()
+  );
+}
+
+/**
+ * Fusionne les informations statiques du
+ * DataLayer avec les événements et signaux
+ * réellement observés par Playwright.
+ */
+function enrichDataLayerDetails(
+  baseDetails: Record<string, unknown>,
+  dynamicDetails: Record<string, unknown>
+): Record<string, unknown> {
+  const staticEvents = getStringArray(
+    baseDetails.allEvents
+  );
+
+  const dynamicEvents = getStringArray(
+    dynamicDetails.events
+  );
+
+  const allEvents = unique([
+    ...staticEvents,
+    ...dynamicEvents,
+  ]);
+
+  const internalEvents =
+    allEvents.filter(
+      isInternalGTMEvent
+    );
+
+  /*
+   * Les événements de consentement sont
+   * techniques et ne sont donc pas considérés
+   * comme des événements métier.
+   */
+  const businessEvents =
+    allEvents.filter(
+      (event) =>
+        !isInternalGTMEvent(event) &&
+        !isConsentEvent(event)
+    );
+
+  const dynamicConsentSignals =
+    getStringArray(
+      dynamicDetails.consentSignals
+    );
+
+  const existingConsentEvidence =
+    getStringArray(
+      baseDetails.consentSignalEvidence
+    );
+
+  const consentSignalEvidence =
+    unique([
+      ...existingConsentEvidence,
+      ...dynamicConsentSignals,
+    ]);
+
+  const consentSignals =
+    baseDetails.consentSignals === true ||
+    consentSignalEvidence.length > 0 ||
+    allEvents.some(isConsentEvent);
+
+  const ecommerceDetected =
+    baseDetails.ecommerceDetected === true ||
+    allEvents.some(isEcommerceEvent);
+
+  const dynamicEntryCount =
+    getNumber(
+      dynamicDetails.entryCount
+    ) ?? 0;
+
+  return {
+    ...baseDetails,
+
+    windowDataLayerDetected:
+      baseDetails.windowDataLayerDetected ===
+        true ||
+      dynamicEntryCount > 0,
+
+    allEvents,
+    internalEvents,
+    businessEvents,
+
+    eventCount: allEvents.length,
+    internalEventCount:
+      internalEvents.length,
+    businessEventCount:
+      businessEvents.length,
+
+    ecommerceDetected,
+    consentSignals,
+    consentSignalEvidence,
+  };
+}
+
+function createDetails(
+  baseDetails: Record<string, unknown>,
+  dynamicTechnology:
+    DynamicTechnologyEvidence,
+  staticDetected: boolean
+): Record<string, unknown> {
+  const commonDetails:
+    Record<string, unknown> = {
+      ...baseDetails,
+
+      detectionModes: {
+        static: staticDetected,
+        dynamic: true,
+      },
+
+      dynamicEvidence:
+        dynamicTechnology.details,
+    };
+
+  if (
+    dynamicTechnology.key !==
+    "datalayer"
+  ) {
+    return commonDetails;
+  }
+
+  return enrichDataLayerDetails(
+    commonDetails,
+    dynamicTechnology.details
+  );
+}
+
 function createDynamicTool(
-  dynamicTechnology: DynamicTechnologyEvidence
+  dynamicTechnology:
+    DynamicTechnologyEvidence
 ): AnalyticsToolDetection {
   const detector =
-    detectorFactories[dynamicTechnology.key];
+    detectorFactories[
+      dynamicTechnology.key
+    ];
 
   const template = detector("");
 
@@ -65,7 +272,9 @@ function createDynamicTool(
 
     status: "Détecté directement",
 
-    ids: [...dynamicTechnology.ids],
+    ids: [
+      ...dynamicTechnology.ids,
+    ],
 
     evidence: [
       ...dynamicTechnology.evidence,
@@ -78,24 +287,22 @@ function createDynamicTool(
     certainty:
       dynamicTechnology.certainty,
 
-    details: {
-      ...(template.details ?? {}),
-
-      detectionModes: {
-        static: false,
-        dynamic: true,
-      },
-
-      dynamicEvidence:
-        dynamicTechnology.details,
-    },
+    details: createDetails(
+      template.details ?? {},
+      dynamicTechnology,
+      false
+    ),
   };
 }
 
 function mergeTool(
   staticTool: AnalyticsToolDetection,
-  dynamicTechnology: DynamicTechnologyEvidence
+  dynamicTechnology:
+    DynamicTechnologyEvidence
 ): AnalyticsToolDetection {
+  const staticDetected =
+    staticTool.present;
+
   return {
     ...staticTool,
 
@@ -123,22 +330,17 @@ function mergeTool(
       dynamicTechnology.certainty
     ),
 
-    details: {
-      ...(staticTool.details ?? {}),
-
-      detectionModes: {
-        static: true,
-        dynamic: true,
-      },
-
-      dynamicEvidence:
-        dynamicTechnology.details,
-    },
+    details: createDetails(
+      staticTool.details ?? {},
+      dynamicTechnology,
+      staticDetected
+    ),
   };
 }
 
 export function fuseDetections(
-  staticTools: AnalyticsToolDetection[],
+  staticTools:
+    AnalyticsToolDetection[],
   dynamicTechnologies:
     DynamicTechnologyEvidence[]
 ): AnalyticsToolDetection[] {
@@ -152,9 +354,13 @@ export function fuseDetections(
 
         ids: [...tool.ids],
 
-        evidence: [...tool.evidence],
+        evidence: [
+          ...tool.evidence,
+        ],
 
-        sources: [...tool.sources],
+        sources: [
+          ...tool.sources,
+        ],
 
         details: tool.details
           ? { ...tool.details }
@@ -166,10 +372,12 @@ export function fuseDetections(
     string,
     number
   >(
-    fusedTools.map((tool, index) => [
-      tool.key,
-      index,
-    ])
+    fusedTools.map(
+      (tool, index) => [
+        tool.key,
+        index,
+      ]
+    )
   );
 
   for (
@@ -181,12 +389,17 @@ export function fuseDetections(
         dynamicTechnology.key
       );
 
-    if (existingIndex === undefined) {
-      const dynamicTool = createDynamicTool(
-        dynamicTechnology
-      );
+    if (
+      existingIndex === undefined
+    ) {
+      const dynamicTool =
+        createDynamicTool(
+          dynamicTechnology
+        );
 
-      fusedTools.push(dynamicTool);
+      fusedTools.push(
+        dynamicTool
+      );
 
       toolIndexByKey.set(
         dynamicTool.key,
@@ -196,10 +409,11 @@ export function fuseDetections(
       continue;
     }
 
-    fusedTools[existingIndex] = mergeTool(
-      fusedTools[existingIndex],
-      dynamicTechnology
-    );
+    fusedTools[existingIndex] =
+      mergeTool(
+        fusedTools[existingIndex],
+        dynamicTechnology
+      );
   }
 
   return fusedTools;

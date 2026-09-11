@@ -291,6 +291,17 @@ export class DynamicEvidenceEngine {
       getDataLayerEvents(result.dataLayer);
 
     /*
+     * Le calcul est maintenant effectué une seule fois,
+     * puis partagé avec la détection DataLayer et
+     * le résultat global du Dynamic Evidence Engine.
+     */
+    const consentSignals =
+      getConsentSignals(
+        result,
+        dataLayerEvents
+      );
+
+    /*
      * Google Tag Manager
      */
     const gtmIds = extractIds(
@@ -518,6 +529,14 @@ export class DynamicEvidenceEngine {
               )}.`,
             ]
           : []),
+
+        ...(consentSignals.length > 0
+          ? [
+              `Signaux de consentement observés : ${consentSignals.join(
+                ", "
+              )}.`,
+            ]
+          : []),
       ];
 
       technologies.push({
@@ -531,6 +550,7 @@ export class DynamicEvidenceEngine {
         details: {
           entryCount: result.dataLayer.length,
           events: dataLayerEvents,
+          consentSignals,
         },
       });
     }
@@ -538,10 +558,7 @@ export class DynamicEvidenceEngine {
     return {
       technologies,
       dataLayerEvents,
-      consentSignals: getConsentSignals(
-        result,
-        dataLayerEvents
-      ),
+      consentSignals,
     };
   }
 }
