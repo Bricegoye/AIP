@@ -47,7 +47,7 @@ interface SourceFlags {
 }
 
 const GTM_ID_PATTERN =
-  /\bGTM-[A-Z0-9]+\b/gi;
+  /\bGTM-[A-Z0-9]+\b/g;
 
 const GA4_ID_PATTERN =
   /\bG-[A-Z0-9]{5,}\b/gi;
