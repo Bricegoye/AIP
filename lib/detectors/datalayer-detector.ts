@@ -10,15 +10,22 @@ function detectVariables(html: string, variables: string[]): string[] {
   );
 }
 
-const INTERNAL_GTM_EVENTS = [
-  "gtm.js",
-  "gtm.dom",
-  "gtm.load",
-  "gtm.click",
-  "gtm.linkClick",
-  "gtm.scrollDepth",
-  "gtm.historyChange",
-];
+const TECHNICAL_PLATFORM_EVENTS = new Set([
+  "dyuaevent",
+]);
+
+function isTechnicalEvent(event: string): boolean {
+  const normalizedEvent = event.toLowerCase();
+
+  return (
+    normalizedEvent.startsWith("gtm.") ||
+    TECHNICAL_PLATFORM_EVENTS.has(normalizedEvent)
+  );
+}
+
+function isConsentEvent(event: string): boolean {
+  return /consent|gdpr|cookie|optanon|didomi|onetrust/i.test(event);
+}
 
 const NAVIGATION_VARIABLES = [
   "page_name",
@@ -79,12 +86,10 @@ export function detectDataLayer(html: string): AnalyticsToolDetection {
 
   const allEvents = unique(eventMatches.map((match) => match[1]));
 
-  const internalEvents = allEvents.filter((event) =>
-    INTERNAL_GTM_EVENTS.includes(event)
-  );
+  const internalEvents = allEvents.filter(isTechnicalEvent);
 
   const businessEvents = allEvents.filter(
-    (event) => !INTERNAL_GTM_EVENTS.includes(event)
+    (event) => !isTechnicalEvent(event) && !isConsentEvent(event)
   );
 
   const navigationVariables = detectVariables(html, NAVIGATION_VARIABLES);
@@ -136,18 +141,14 @@ export function detectDataLayer(html: string): AnalyticsToolDetection {
     details: {
       windowDataLayerDetected,
       pushDetected,
-
       allEvents,
       internalEvents,
       businessEvents,
-
       eventCount: allEvents.length,
       internalEventCount: internalEvents.length,
       businessEventCount: businessEvents.length,
-
       standardVariables,
       standardVariableCount: standardVariables.length,
-
       variableCategories: {
         navigation: navigationVariables,
         user: userVariables,
@@ -156,7 +157,6 @@ export function detectDataLayer(html: string): AnalyticsToolDetection {
         form: formVariables,
         search: searchVariables,
       },
-
       ecommerceDetected,
       consentSignals,
     },
