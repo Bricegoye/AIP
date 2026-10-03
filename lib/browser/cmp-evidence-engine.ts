@@ -457,11 +457,65 @@ export function detectDynamicConsentTechnologies(
 
   /*
    * Google Consent Mode
+   *
+   * V3:
+   * - distingue la présence générale de Consent Mode
+   * - distingue explicitement consent default / consent update
+   * - exploite les commandes capturées au runtime
+   * - exploite les signaux réseau gcs / gcd / pscdl / npa
+   * - ne considère pas pscdl / npa seuls comme preuve suffisante
    */
-  const consentCommandDetected =
+
+  const runtimeConsentCommands =
+    result.consentCommands ?? [];
+
+  const runtimeDefaultCommands =
+    runtimeConsentCommands.filter(
+      (command) =>
+        command.action === "default"
+    );
+
+  const runtimeUpdateCommands =
+    runtimeConsentCommands.filter(
+      (command) =>
+        command.action === "update"
+    );
+
+  const htmlConsentCommandDetected =
     /gtag\s*\(\s*["']consent["']\s*,\s*["'](?:default|update)["']/i.test(
       result.html
     );
+
+  const htmlConsentDefaultDetected =
+    /gtag\s*\(\s*["']consent["']\s*,\s*["']default["']/i.test(
+      result.html
+    );
+
+  const htmlConsentUpdateDetected =
+    /gtag\s*\(\s*["']consent["']\s*,\s*["']update["']/i.test(
+      result.html
+    );
+
+  /*
+   * La détection finale combine :
+   *
+   * 1. les commandes réellement observées au runtime ;
+   * 2. les éventuelles commandes visibles dans le DOM rendu.
+   *
+   * Le runtime est particulièrement important car une commande
+   * gtag consent peut être exécutée sans rester visible dans le HTML.
+   */
+  const consentDefaultDetected =
+    runtimeDefaultCommands.length > 0 ||
+    htmlConsentDefaultDetected;
+
+  const consentUpdateDetected =
+    runtimeUpdateCommands.length > 0 ||
+    htmlConsentUpdateDetected;
+
+  const consentCommandDetected =
+    runtimeConsentCommands.length > 0 ||
+    htmlConsentCommandDetected;
 
   const googleConsentSignals =
     consentSignals.filter((signal) =>
@@ -470,58 +524,136 @@ export function detectDynamicConsentTechnologies(
       )
     );
 
-  const hasPrimaryGoogleSignal =
-    googleConsentSignals.some(
-      (signal) =>
-        /^(?:gcs|gcd)=/i.test(
-          signal
-        )
+  const gcsSignals =
+    googleConsentSignals.filter((signal) =>
+      /^gcs=/i.test(signal)
     );
 
-  if (
+  const gcdSignals =
+    googleConsentSignals.filter((signal) =>
+      /^gcd=/i.test(signal)
+    );
+
+  const pscdlSignals =
+    googleConsentSignals.filter((signal) =>
+      /^pscdl=/i.test(signal)
+    );
+
+  const npaSignals =
+    googleConsentSignals.filter((signal) =>
+      /^npa=/i.test(signal)
+    );
+
+  /*
+   * gcs et gcd constituent les signaux réseau
+   * principaux permettant de confirmer Google
+   * Consent Mode.
+   *
+   * pscdl et npa restent des signaux complémentaires
+   * et ne suffisent pas seuls à confirmer sa présence.
+   */
+  const hasPrimaryGoogleSignal =
+    gcsSignals.length > 0 ||
+    gcdSignals.length > 0;
+
+  const googleConsentModeDetected =
     consentCommandDetected ||
-    hasPrimaryGoogleSignal
-  ) {
+    hasPrimaryGoogleSignal;
+
+  if (googleConsentModeDetected) {
     const consentModeSources =
       getSources({
+        runtime:
+          runtimeConsentCommands.length > 0,
+
         html:
-          consentCommandDetected,
+          htmlConsentCommandDetected,
+
         network:
-          googleConsentSignals.length >
-          0,
+          googleConsentSignals.length > 0,
       });
 
     technologies.push({
       key: "google-consent-mode",
       present: true,
       ids: [],
+
       evidence: [
-        ...(consentCommandDetected
+        ...(runtimeConsentCommands.length > 0
+          ? [
+              `${runtimeConsentCommands.length} commande(s) Google Consent Mode capturée(s) au runtime.`,
+            ]
+          : []),
+
+        ...(htmlConsentCommandDetected
           ? [
               "Une commande gtag consent est présente dans le DOM rendu.",
             ]
           : []),
 
-        ...googleConsentSignals,
+        ...(consentDefaultDetected
+          ? [
+              "Une commande Google Consent Mode default est détectée.",
+            ]
+          : []),
+
+        ...(consentUpdateDetected
+          ? [
+              "Une commande Google Consent Mode update est détectée.",
+            ]
+          : []),
+
+        ...gcsSignals,
+        ...gcdSignals,
+        ...pscdlSignals,
+        ...npaSignals,
       ],
-      sources:
+
+      sources: consentModeSources,
+
+      certainty: getCertainty(
         consentModeSources,
-      certainty:
-        getCertainty(
-          consentModeSources,
-          googleConsentSignals.some(
-            (signal) =>
-              /^gcd=/i.test(signal)
-          )
-        ),
+        gcdSignals.length > 0 ||
+          runtimeConsentCommands.length > 0
+      ),
+
       details: {
         consentCommandDetected,
+        consentDefaultDetected,
+        consentUpdateDetected,
+
+        runtimeConsentCommandDetected:
+          runtimeConsentCommands.length > 0,
+
+        runtimeDefaultCommandCount:
+          runtimeDefaultCommands.length,
+
+        runtimeUpdateCommandCount:
+          runtimeUpdateCommands.length,
+
+        consentCommands:
+          runtimeConsentCommands,
+
+        htmlConsentCommandDetected,
+        htmlConsentDefaultDetected,
+        htmlConsentUpdateDetected,
+
+        gcsValues: gcsSignals,
+        gcdValues: gcdSignals,
+        pscdlValues: pscdlSignals,
+        npaValues: npaSignals,
+
         consentSignals:
           googleConsentSignals,
+
+        networkSignalDetected:
+          googleConsentSignals.length > 0,
+
+        primaryGoogleSignalDetected:
+          hasPrimaryGoogleSignal,
       },
     });
   }
-
   /*
    * IAB TCF API
    */

@@ -11,6 +11,14 @@ import {
   detectDynamicConsentTechnologies,
 } from "./cmp-evidence-engine";
 
+import {
+  detectDynamicChatbotTechnologies,
+} from "./chatbot-evidence-engine";
+
+import {
+  detectDynamicAdobeTechnologies,
+} from "./adobe-evidence-engine";
+
 export type DynamicTechnologyKey =
   | "gtm"
   | "ga4"
@@ -21,7 +29,15 @@ export type DynamicTechnologyKey =
   | "axeptio"
   | "cookiebot"
   | "google-consent-mode"
-  | "tcf-api";
+  | "tcf-api"
+  | "adobe-launch"
+  | "adobe-analytics"
+  | "salesforce-embedded-messaging"
+  | "genesys"
+  | "intercom"
+  | "zendesk"
+  | "ekonsilio"
+  | "generic-chatbot";
 
 export interface DynamicTechnologyEvidence {
   key: DynamicTechnologyKey;
@@ -158,6 +174,227 @@ function getDataLayerEvents(
   return unique(events);
 }
 
+function isPlainObject(
+  value: unknown
+): value is Record<string, unknown> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value)
+  );
+}
+
+function collectVariablePaths(
+  value: unknown,
+  prefix = "",
+  depth = 0
+): string[] {
+  if (depth > 6) {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) =>
+      collectVariablePaths(
+        item,
+        prefix ? `${prefix}[${index}]` : `[${index}]`,
+        depth + 1
+      )
+    );
+  }
+
+  if (!isPlainObject(value)) {
+    return prefix ? [prefix] : [];
+  }
+
+  return Object.entries(value).flatMap(([key, nestedValue]) => {
+    const path = prefix ? `${prefix}.${key}` : key;
+
+    if (isPlainObject(nestedValue) || Array.isArray(nestedValue)) {
+      const nestedPaths = collectVariablePaths(
+        nestedValue,
+        path,
+        depth + 1
+      );
+
+      return nestedPaths.length > 0
+        ? [path, ...nestedPaths]
+        : [path];
+    }
+
+    return [path];
+  });
+}
+
+function getDataLayerVariables(
+  entries: unknown[]
+): string[] {
+  return unique(
+    entries.flatMap((entry) =>
+      collectVariablePaths(entry)
+    )
+  ).sort();
+}
+
+interface DataLayerVariableValue {
+  path: string;
+  values: unknown[];
+  occurrences: number;
+}
+
+function isTechnicalArrayVariablePath(
+  path: string
+): boolean {
+  return /^\d+(?:\.|$|\[)/.test(path);
+}
+
+function collectLeafVariableValues(
+  value: unknown,
+  prefix = "",
+  depth = 0
+): Array<{ path: string; value: unknown }> {
+  if (depth > 6) return [];
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) =>
+      collectLeafVariableValues(
+        item,
+        prefix ? `${prefix}[${index}]` : `[${index}]`,
+        depth + 1
+      )
+    );
+  }
+
+  if (isPlainObject(value)) {
+    return Object.entries(value).flatMap(([key, nestedValue]) => {
+      const path = prefix ? `${prefix}.${key}` : key;
+
+      if (isPlainObject(nestedValue) || Array.isArray(nestedValue)) {
+        return collectLeafVariableValues(nestedValue, path, depth + 1);
+      }
+
+      return [{ path, value: nestedValue }];
+    });
+  }
+
+  return prefix ? [{ path: prefix, value }] : [];
+}
+
+function getComparableValue(
+  value: unknown
+): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function getDataLayerVariableValues(
+  entries: unknown[]
+): DataLayerVariableValue[] {
+  const variableMap = new Map<
+    string,
+    {
+      values: unknown[];
+      serializedValues: Set<string>;
+      occurrences: number;
+    }
+  >();
+
+  for (const entry of entries) {
+    const variables = collectLeafVariableValues(entry);
+
+    for (const variable of variables) {
+      if (isTechnicalArrayVariablePath(variable.path)) {
+        continue;
+      }
+
+      const sanitizedValue = sanitizeDataLayerValue(variable.value);
+      const comparableValue = getComparableValue(sanitizedValue);
+      const existing = variableMap.get(variable.path);
+
+      if (!existing) {
+        variableMap.set(variable.path, {
+          values: [sanitizedValue],
+          serializedValues: new Set([comparableValue]),
+          occurrences: 1,
+        });
+        continue;
+      }
+
+      existing.occurrences += 1;
+
+      if (!existing.serializedValues.has(comparableValue)) {
+        if (existing.values.length < 20) {
+          existing.values.push(sanitizedValue);
+        }
+        existing.serializedValues.add(comparableValue);
+      }
+    }
+  }
+
+  return [...variableMap.entries()]
+    .map(([path, data]) => ({
+      path,
+      values: data.values,
+      occurrences: data.occurrences,
+    }))
+    .sort((a, b) => a.path.localeCompare(b.path));
+}
+
+function sanitizeDataLayerValue(
+  value: unknown,
+  depth = 0
+): unknown {
+  if (depth > 8) {
+    return "[Max depth reached]";
+  }
+
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) =>
+      sanitizeDataLayerValue(item, depth + 1)
+    );
+  }
+
+  if (isPlainObject(value)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nestedValue]) => [
+        key,
+        sanitizeDataLayerValue(nestedValue, depth + 1),
+      ])
+    );
+  }
+
+  if (typeof value === "undefined") return "[undefined]";
+  if (typeof value === "function") return "[function]";
+  if (typeof value === "symbol") return value.toString();
+  if (typeof value === "bigint") return value.toString();
+
+  try {
+    return String(value);
+  } catch {
+    return "[unserializable]";
+  }
+}
+
+function getDataLayerRawEntries(
+  entries: unknown[]
+): unknown[] {
+  return entries.map((entry) =>
+    sanitizeDataLayerValue(entry)
+  );
+}
+
 function getConsentSignals(
   result: BrowserAnalysisResult,
   dataLayerEvents: string[]
@@ -171,6 +408,9 @@ function getConsentSignals(
 
   const signals: string[] = [];
 
+  /*
+   * Signaux réseau Google Consent Mode.
+   */
   for (
     const observation of
     result.networkObservations
@@ -224,6 +464,10 @@ function getConsentSignals(
     }
   }
 
+  /*
+   * Événement GDPR générique éventuellement
+   * exposé dans le DataLayer.
+   */
   if (
     dataLayerEvents.some(
       (event) =>
@@ -234,6 +478,42 @@ function getConsentSignals(
     signals.push(
       "dataLayer event: gdprconsent"
     );
+  }
+
+  /*
+   * AIP V3 — commandes Google Consent Mode
+   * capturées par BrowserEngine avant l'exécution
+   * des scripts du site.
+   *
+   * Exemples :
+   *
+   * consent-command:default
+   * consent-default:analytics_storage=denied
+   * consent-default:ad_storage=denied
+   *
+   * consent-command:update
+   * consent-update:analytics_storage=granted
+   */
+  for (
+    const command of
+    result.consentCommands
+  ) {
+    signals.push(
+      `consent-command:${command.action}`
+    );
+
+    for (
+      const [key, value] of
+      Object.entries(
+        command.parameters
+      )
+    ) {
+      signals.push(
+        `consent-${command.action}:${key}=${String(
+          value
+        )}`
+      );
+    }
   }
 
   return unique(signals);
@@ -386,6 +666,27 @@ export class DynamicEvidenceEngine {
         result.dataLayer
       );
 
+    const dataLayerVariables =
+      getDataLayerVariables(
+        result.dataLayer
+      );
+
+    const dataLayerRawEntries =
+      getDataLayerRawEntries(
+        result.dataLayer
+      );
+
+    const dataLayerVariableValues =
+      getDataLayerVariableValues(
+        result.dataLayer
+      );
+
+    /*
+     * AIP V3 :
+     * consentSignals contient désormais à la fois
+     * les preuves réseau ET les commandes Consent
+     * capturées au runtime par BrowserEngine.
+     */
     const consentSignals =
       getConsentSignals(
         result,
@@ -733,7 +1034,39 @@ export class DynamicEvidenceEngine {
           events:
             dataLayerEvents,
 
+          eventCount:
+            dataLayerEvents.length,
+
+          variables:
+            dataLayerVariables,
+
+          variableCount:
+            dataLayerVariables.length,
+
+          variableValues:
+            dataLayerVariableValues,
+
+          variableValueCount:
+            dataLayerVariableValues.length,
+
+          rawEntries:
+            dataLayerRawEntries,
+
+          rawEntryCount:
+            dataLayerRawEntries.length,
+
           consentSignals,
+
+          /*
+           * Les commandes originales restent également
+           * accessibles dans les détails pour faciliter
+           * le diagnostic des audits.
+           */
+          consentCommands:
+            result.consentCommands,
+
+          consentCommandCount:
+            result.consentCommands.length,
         },
       });
     }
@@ -752,6 +1085,46 @@ export class DynamicEvidenceEngine {
 
     technologies.push(
       ...consentTechnologies
+    );
+
+    /*
+     * AIP V3.3 — Adobe dynamique
+     *
+     * Adobe Launch et Adobe Analytics sont traités
+     * séparément afin de distinguer la présence
+     * du tag manager Adobe d'une collecte Analytics
+     * réellement observée.
+     */
+    const adobeTechnologies =
+      detectDynamicAdobeTechnologies(
+        result
+      );
+
+    technologies.push(
+      ...adobeTechnologies
+    );
+
+    /*
+     * AIP V3.3 — Chatbot Detector
+     *
+     * Détection dynamique :
+     * - Salesforce Embedded Messaging
+     * - Genesys
+     * - Intercom
+     * - Zendesk
+     * - eKonsilio
+     * - chatbot générique
+     *
+     * Ces technologies sont informatives
+     * et n'ont aucun impact sur le score AIP.
+     */
+    const chatbotTechnologies =
+      detectDynamicChatbotTechnologies(
+        result
+      );
+
+    technologies.push(
+      ...chatbotTechnologies
     );
 
     return {

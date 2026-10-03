@@ -5,6 +5,9 @@ import type { AuditSuccessResult } from "@/lib/types/audit-result";
 import { useLanguage } from "@/lib/i18n/language-context";
 
 import ScoreGauge from "./ScoreGauge";
+import DataLayerInspector from "./DataLayerInspector";
+import TechnicalEvidenceInspector from "./TechnicalEvidenceInspector";
+import ConsentInspector from "./ConsentInspector";
 
 interface AuditResultsProps {
   result: AuditSuccessResult;
@@ -82,76 +85,156 @@ export default function AuditResults({
 
               </div>
             </div>
+
           </div>
         </div>
 
         {/* Score Gauge */}
         <div className="mt-12">
-          <ScoreGauge score={result.scoring.globalScore} />
+          <ScoreGauge
+            score={result.scoring.globalScore}
+          />
         </div>
 
         {/* Detected Technologies */}
         <div className="mt-12 border-t border-slate-200 pt-10">
+
           <div className="flex items-center justify-between gap-4">
             <h3 className="text-lg font-bold text-slate-900">
               {t.results.detectedTechnologies}
             </h3>
 
             <span className="rounded-full bg-sky-100 px-3 py-1 text-sm font-semibold text-sky-700">
-              {detectedTools.length} {t.results.detected.toLowerCase()}
+              {detectedTools.length}{" "}
+              {t.results.detected.toLowerCase()}
             </span>
           </div>
 
           <div className="mt-6 space-y-3">
-            {detectedTools.map((tool) => (
-              <div
-                key={tool.key}
-                className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-4"
-              >
-                {/* Technology Header */}
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="font-semibold text-slate-900">
-                      {tool.name}
-                    </p>
 
-                    <p className="mt-1 text-sm text-slate-500">
-                      {tool.category}
-                    </p>
-                  </div>
+            {detectedTools.map((tool) => {
+              const isDataLayer =
+                tool.key === "datalayer";
 
-                  <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
-                    {t.results.detected}
-                  </span>
-                </div>
+              const isConsent =
+                tool.category === "Consent";
 
-                {/* Technology IDs */}
-                {tool.ids && tool.ids.length > 0 && (
-                  <div className="mt-4 border-t border-slate-200 pt-4">
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                      {t.results.detectedId}
-                    </p>
+              return (
+                <div
+                  key={tool.key}
+                  className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-4"
+                >
 
-                    <div className="flex flex-wrap gap-2">
-                      {tool.ids.map((id) => (
-                        <span
-                          key={id}
-                          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-mono text-xs font-medium text-slate-700"
-                        >
-                          {id}
-                        </span>
-                      ))}
+                  {/* Technology Header */}
+                  <div className="flex items-start justify-between gap-4">
+
+                    <div>
+                      <p className="font-semibold text-slate-900">
+                        {tool.name}
+                      </p>
+
+                      <p className="mt-1 text-sm text-slate-500">
+                        {tool.category}
+                      </p>
                     </div>
+
+                    <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                      {t.results.detected}
+                    </span>
+
                   </div>
-                )}
-              </div>
-            ))}
+
+                  {/* Technology IDs */}
+                  {tool.ids &&
+                    tool.ids.length > 0 && (
+                      <div className="mt-4 border-t border-slate-200 pt-4">
+
+                        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                          {t.results.detectedId}
+                        </p>
+
+                        <div className="flex flex-wrap gap-2">
+
+                          {tool.ids.map(
+                            (id) => (
+                              <span
+                                key={id}
+                                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-mono text-xs font-medium text-slate-700"
+                              >
+                                {id}
+                              </span>
+                            )
+                          )}
+
+                        </div>
+
+                      </div>
+                    )}
+
+                  {/* DataLayer Inspector */}
+                  {isDataLayer && (
+                    <DataLayerInspector
+                      details={
+                        tool.details
+                      }
+                    />
+                  )}
+
+                  {/* Consent Inspector */}
+                  {isConsent && (
+                    <ConsentInspector
+                      toolKey={
+                        tool.key
+                      }
+                      toolName={
+                        tool.name
+                      }
+                      evidence={
+                        tool.evidence
+                      }
+                      sources={
+                        tool.sources
+                      }
+                      details={
+                        tool.details
+                      }
+                      certainty={
+                        tool.certainty
+                      }
+                    />
+                  )}
+
+                  {/* Technical Evidence Inspector */}
+                  {!isDataLayer &&
+                    !isConsent && (
+                      <TechnicalEvidenceInspector
+                        evidence={
+                          tool.evidence
+                        }
+                        sources={
+                          tool.sources
+                        }
+                        details={
+                          tool.details
+                        }
+                        certainty={
+                          tool.certainty
+                        }
+                      />
+                    )}
+
+                </div>
+              );
+            })}
+
           </div>
         </div>
 
         {/* Category Scores */}
         <div className="mt-12 border-t border-slate-200 pt-10">
+
           <div className="flex items-center justify-between gap-4">
+
             <h3 className="text-lg font-bold text-slate-900">
               {t.results.categoryScores}
             </h3>
@@ -159,53 +242,77 @@ export default function AuditResults({
             <span className="text-sm text-slate-500">
               {t.results.maturityBreakdown}
             </span>
+
           </div>
 
           <div className="mt-8 space-y-6">
-            {result.scoring.categories.map((category) => {
-              const percentage =
-                category.maxScore > 0
-                  ? Math.round(
-                      (category.score / category.maxScore) * 100
-                    )
-                  : 0;
 
-              return (
-                <div key={category.category}>
-                  <div className="mb-2 flex items-center justify-between">
-                    <p className="font-semibold text-slate-800">
-                      {categoryLabels[category.category] ??
-                        category.category}
-                    </p>
+            {result.scoring.categories.map(
+              (category) => {
+                const percentage =
+                  category.maxScore > 0
+                    ? Math.round(
+                        (category.score /
+                          category.maxScore) *
+                          100
+                      )
+                    : 0;
 
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm text-slate-500">
-                        {percentage}%
-                      </span>
+                return (
+                  <div
+                    key={
+                      category.category
+                    }
+                  >
 
-                      <span className="min-w-[65px] text-right text-sm font-semibold text-slate-900">
-                        {category.score} / {category.maxScore}
-                      </span>
+                    <div className="mb-2 flex items-center justify-between">
+
+                      <p className="font-semibold text-slate-800">
+                        {categoryLabels[
+                          category.category
+                        ] ??
+                          category.category}
+                      </p>
+
+                      <div className="flex items-center gap-3">
+
+                        <span className="text-sm text-slate-500">
+                          {percentage}%
+                        </span>
+
+                        <span className="min-w-[65px] text-right text-sm font-semibold text-slate-900">
+                          {category.score} /{" "}
+                          {
+                            category.maxScore
+                          }
+                        </span>
+
+                      </div>
+
                     </div>
-                  </div>
 
-                  <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
-                    <div
-                      className="h-full rounded-full bg-sky-500 transition-all duration-700"
-                      style={{
-                        width: `${percentage}%`,
-                      }}
-                    />
+                    <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
+                      <div
+                        className="h-full rounded-full bg-sky-500 transition-all duration-700"
+                        style={{
+                          width: `${percentage}%`,
+                        }}
+                      />
+                    </div>
+
                   </div>
-                </div>
-              );
-            })}
+                );
+              }
+            )}
+
           </div>
         </div>
 
         {/* Executive Summary */}
         <div className="mt-12 border-t border-slate-200 pt-10">
+
           <div>
+
             <span className="text-xs font-semibold uppercase tracking-wider text-violet-600">
               {t.results.aiAnalysis}
             </span>
@@ -215,108 +322,164 @@ export default function AuditResults({
             </h3>
 
             <p className="mt-2 text-sm text-slate-500">
-              {t.results.executiveSummaryDescription}
+              {
+                t.results
+                  .executiveSummaryDescription
+              }
             </p>
+
           </div>
 
           <div className="mt-6 rounded-2xl border border-violet-100 bg-violet-50/50 p-6">
+
             <p className="text-base leading-8 text-slate-700">
-              {result.report.executiveSummary}
+              {
+                result.report
+                  .executiveSummary
+              }
             </p>
+
           </div>
+
         </div>
 
         {/* Strengths & Weaknesses */}
         <div className="mt-12 border-t border-slate-200 pt-10">
+
           <div>
+
             <h3 className="text-lg font-bold text-slate-900">
               {t.results.auditFindings}
             </h3>
 
             <p className="mt-2 text-sm text-slate-500">
-              {t.results.findingsDescription}
+              {
+                t.results
+                  .findingsDescription
+              }
             </p>
+
           </div>
 
           <div className="mt-6 grid gap-6 md:grid-cols-2">
 
             {/* Strengths */}
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-6">
+
               <div className="flex items-center gap-3">
+
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
                   ✓
                 </div>
 
                 <div>
+
                   <p className="font-bold text-slate-900">
                     {t.results.strengths}
                   </p>
 
                   <p className="text-sm text-slate-500">
-                    {t.results.strengthsDescription}
+                    {
+                      t.results
+                        .strengthsDescription
+                    }
                   </p>
+
                 </div>
+
               </div>
 
               <div className="mt-6 space-y-4">
-                {result.report.strengths.map((strength, index) => (
-                  <div
-                    key={index}
-                    className="flex items-start gap-3"
-                  >
-                    <span className="mt-1 text-emerald-600">
-                      ✓
-                    </span>
 
-                    <p className="text-sm leading-6 text-slate-700">
-                      {strength}
-                    </p>
-                  </div>
-                ))}
+                {result.report.strengths.map(
+                  (
+                    strength,
+                    index
+                  ) => (
+                    <div
+                      key={index}
+                      className="flex items-start gap-3"
+                    >
+
+                      <span className="mt-1 text-emerald-600">
+                        ✓
+                      </span>
+
+                      <p className="text-sm leading-6 text-slate-700">
+                        {strength}
+                      </p>
+
+                    </div>
+                  )
+                )}
+
               </div>
+
             </div>
 
             {/* Weaknesses */}
             <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-6">
+
               <div className="flex items-center gap-3">
+
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
                   !
                 </div>
 
                 <div>
+
                   <p className="font-bold text-slate-900">
                     {t.results.weaknesses}
                   </p>
 
                   <p className="text-sm text-slate-500">
-                    {t.results.weaknessesDescription}
+                    {
+                      t.results
+                        .weaknessesDescription
+                    }
                   </p>
+
                 </div>
+
               </div>
 
               <div className="mt-6 space-y-4">
-                {result.report.weaknesses.map((weakness, index) => (
-                  <div
-                    key={index}
-                    className="flex items-start gap-3"
-                  >
-                    <span className="mt-1 text-amber-600">
-                      !
-                    </span>
 
-                    <p className="text-sm leading-6 text-slate-700">
-                      {weakness}
-                    </p>
-                  </div>
-                ))}
+                {result.report.weaknesses.map(
+                  (
+                    weakness,
+                    index
+                  ) => (
+                    <div
+                      key={index}
+                      className="flex items-start gap-3"
+                    >
+
+                      <span className="mt-1 text-amber-600">
+                        !
+                      </span>
+
+                      <p className="text-sm leading-6 text-slate-700">
+                        {weakness}
+                      </p>
+
+                    </div>
+                  )
+                )}
+
               </div>
+
             </div>
+
           </div>
+
         </div>
 
         {/* Priority Actions */}
         <div className="mt-12 border-t border-slate-200 pt-10">
+
           <div>
+
             <span className="text-xs font-semibold uppercase tracking-wider text-violet-600">
               {t.results.actionPlan}
             </span>
@@ -326,37 +489,56 @@ export default function AuditResults({
             </h3>
 
             <p className="mt-2 text-sm text-slate-500">
-              {t.results.priorityDescription}
+              {
+                t.results
+                  .priorityDescription
+              }
             </p>
+
           </div>
 
           <div className="mt-6 space-y-4">
-            {result.report.priorityActions.map((action, index) => (
-              <div
-                key={index}
-                className="flex gap-4 rounded-2xl border border-slate-200 bg-white p-5 transition hover:border-sky-200 hover:shadow-sm"
-              >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sm font-bold text-sky-700">
-                  {index + 1}
-                </div>
 
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">
-                    {t.results.priority} {index + 1}
-                  </p>
+            {result.report.priorityActions.map(
+              (
+                action,
+                index
+              ) => (
+                <div
+                  key={index}
+                  className="flex gap-4 rounded-2xl border border-slate-200 bg-white p-5 transition hover:border-sky-200 hover:shadow-sm"
+                >
 
-                  <p className="mt-1 text-sm leading-6 text-slate-600">
-                    {action}
-                  </p>
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sm font-bold text-sky-700">
+                    {index + 1}
+                  </div>
+
+                  <div>
+
+                    <p className="text-sm font-semibold text-slate-900">
+                      {t.results.priority}{" "}
+                      {index + 1}
+                    </p>
+
+                    <p className="mt-1 text-sm leading-6 text-slate-600">
+                      {action}
+                    </p>
+
+                  </div>
+
                 </div>
-              </div>
-            ))}
+              )
+            )}
+
           </div>
+
         </div>
 
         {/* AI Recommendations */}
         <div className="mt-12 border-t border-slate-200 pt-10">
+
           <div>
+
             <span className="text-xs font-semibold uppercase tracking-wider text-violet-600">
               {t.results.aiInsights}
             </span>
@@ -366,41 +548,63 @@ export default function AuditResults({
             </h3>
 
             <p className="mt-2 text-sm text-slate-500">
-              {t.results.recommendationsDescription}
+              {
+                t.results
+                  .recommendationsDescription
+              }
             </p>
+
           </div>
 
           <div className="mt-6 grid gap-4 md:grid-cols-2">
+
             {result.report.recommendations.map(
-              (recommendation, index) => (
+              (
+                recommendation,
+                index
+              ) => (
                 <div
                   key={index}
                   className="rounded-2xl border border-violet-100 bg-violet-50/40 p-5 transition hover:border-violet-200 hover:shadow-sm"
                 >
+
                   <div className="flex items-start gap-4">
+
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-lg">
                       ✦
                     </div>
 
                     <div>
+
                       <p className="text-xs font-semibold uppercase tracking-wider text-violet-600">
-                        {t.results.recommendation} {index + 1}
+                        {
+                          t.results
+                            .recommendation
+                        }{" "}
+                        {index + 1}
                       </p>
 
                       <p className="mt-2 text-sm leading-6 text-slate-700">
                         {recommendation}
                       </p>
+
                     </div>
+
                   </div>
+
                 </div>
               )
             )}
+
           </div>
+
         </div>
 
         {/* Technical Analysis */}
         <div className="mt-12 border-t border-slate-200 pt-10">
+
           <div>
+
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
               {t.results.technicalDetails}
             </span>
@@ -410,40 +614,64 @@ export default function AuditResults({
             </h3>
 
             <p className="mt-2 text-sm text-slate-500">
-              {t.results.technicalDescription}
+              {
+                t.results
+                  .technicalDescription
+              }
             </p>
+
           </div>
 
           <details className="group mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+
             <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5">
+
               <div>
+
                 <p className="font-semibold text-slate-900">
-                  {t.results.viewTechnicalAnalysis}
+                  {
+                    t.results
+                      .viewTechnicalAnalysis
+                  }
                 </p>
 
                 <p className="mt-1 text-sm text-slate-500">
-                  {t.results.expandTechnicalAnalysis}
+                  {
+                    t.results
+                      .expandTechnicalAnalysis
+                  }
                 </p>
+
               </div>
 
               <span className="text-xl text-slate-400 transition-transform group-open:rotate-180">
                 ↓
               </span>
+
             </summary>
 
             <div className="border-t border-slate-200 bg-white px-6 py-6">
+
               <p className="whitespace-pre-line text-sm leading-7 text-slate-700">
-                {result.report.technicalAnalysis}
+                {
+                  result.report
+                    .technicalAnalysis
+                }
               </p>
+
             </div>
+
           </details>
+
         </div>
 
         {/* Audit Metadata */}
         <div className="mt-12 border-t border-slate-200 pt-8">
+
           <div className="flex flex-col gap-3 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
 
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+
               <span>
                 {t.results.auditCompleted}
               </span>
@@ -453,7 +681,11 @@ export default function AuditResults({
               </span>
 
               <span>
-                {(result.executionTime / 1000).toFixed(1)}s
+                {(
+                  result.executionTime /
+                  1000
+                ).toFixed(1)}
+                s
               </span>
 
               <span className="hidden sm:inline">
@@ -461,8 +693,12 @@ export default function AuditResults({
               </span>
 
               <span>
-                {new Date(result.generatedAt).toLocaleString(
-                  language === "fr" ? "fr-FR" : "en-US",
+                {new Date(
+                  result.generatedAt
+                ).toLocaleString(
+                  language === "fr"
+                    ? "fr-FR"
+                    : "en-US",
                   {
                     month: "short",
                     day: "numeric",
@@ -472,6 +708,7 @@ export default function AuditResults({
                   }
                 )}
               </span>
+
             </div>
 
             <div>
@@ -481,6 +718,7 @@ export default function AuditResults({
             </div>
 
           </div>
+
         </div>
 
       </div>
