@@ -20,6 +20,15 @@ export function detectCookiebot(
       html
     );
 
+  /*
+   * Signal secondaire uniquement.
+   *
+   * "CookieConsent" est trop générique pour
+   * confirmer Cookiebot à lui seul.
+   *
+   * Il peut être présent sur des sites utilisant
+   * une autre CMP, comme OneTrust.
+   */
   const consentObjectDetected =
     /CookieConsent|Cookiebot\.consent/i.test(
       html
@@ -30,11 +39,20 @@ export function detectCookiebot(
       /data-cbid=["']([A-Za-z0-9_-]+)["']/i
     )?.[1];
 
+  /*
+   * Cookiebot est considéré présent uniquement
+   * lorsqu'au moins une preuve spécifique à
+   * Cookiebot est disponible.
+   *
+   * consentObjectDetected reste conservé dans
+   * details/evidence mais ne déclenche plus
+   * la détection à lui seul.
+   */
   const present =
     domainDetected ||
     scriptDetected ||
     objectDetected ||
-    consentObjectDetected;
+    Boolean(cbid);
 
   return {
     name: "Cookiebot",
@@ -70,7 +88,7 @@ export function detectCookiebot(
         : []),
 
       ...(consentObjectDetected
-        ? ["Objet de consentement Cookiebot"]
+        ? ["Signal de consentement compatible Cookiebot"]
         : []),
 
       ...(cbid
@@ -91,7 +109,7 @@ export function detectCookiebot(
       scriptDetected ||
       Boolean(cbid)
         ? "Élevé"
-        : present
+        : objectDetected
           ? "Moyen"
           : "Faible",
 

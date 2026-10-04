@@ -23,6 +23,8 @@ import { detectDidomi } from "./didomi-detector";
 import { detectAxeptio } from "./axeptio-detector";
 import { detectCookiebot } from "./cookiebot-detector";
 
+import { detectTealium } from "./tealium-detector";
+
 import {
   detectGoogleConsentMode,
 } from "./google-consent-mode-detector";
@@ -52,6 +54,7 @@ const detectorFactories: Partial<
   gtm: detectGTM,
   ga4: detectGA4,
   floodlight: detectFloodlight,
+  tealium: detectTealium,
   datalayer: detectDataLayer,
   "adobe-launch": detectAdobeLaunch,
   "adobe-analytics": detectAdobeAnalytics,
@@ -369,9 +372,12 @@ function createDynamicOnlyTemplate(
 
   return {
     name,
+
     key:
       dynamicTechnology.key,
+
     vendor: provider,
+
     category: CHATBOT_KEYS.has(
       dynamicTechnology.key
     )

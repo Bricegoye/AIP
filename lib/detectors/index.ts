@@ -5,6 +5,7 @@ import type {
 import { detectGTM } from "./gtm-detector";
 import { detectGA4 } from "./ga4-detector";
 import { detectTagCommander } from "./tagcommander-detector";
+import { detectTealium } from "./tealium-detector";
 import { detectConsent } from "./consent-detector";
 import { detectDataLayer } from "./datalayer-detector";
 import { detectAdobeLaunch } from "./adobe-launch-detector";
@@ -46,6 +47,11 @@ const detectors: Detector[] = [
     key: "tagcommander",
     name: "TagCommander",
     detect: detectTagCommander,
+  },
+  {
+    key: "tealium",
+    name: "Tealium iQ",
+    detect: detectTealium,
   },
   {
     key: "datalayer",
