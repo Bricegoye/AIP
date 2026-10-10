@@ -1,3 +1,6 @@
+
+import type { KPIAnalysis } from "@/lib/kpi/kpi-types";
+
 export interface AuditTool {
   name: string;
   key: string;
@@ -16,7 +19,11 @@ export interface AuditTool {
 
 export interface AuditInsight {
   key: string;
-  severity: "success" | "info" | "warning" | "critical";
+  severity:
+    | "success"
+    | "info"
+    | "warning"
+    | "critical";
   title: string;
   description: string;
   relatedTools: string[];
@@ -63,9 +70,24 @@ export interface AuditSuccessResult {
   url: string;
   generatedAt: string;
   executionTime: number;
+
   detection: AuditDetection;
   scoring: AuditScoring;
+
+  /**
+   * KPI Engine V1
+   * Recommandations d'indicateurs
+   * sans valeurs de performance inventées.
+   */
+  kpis: KPIAnalysis;
+
   report: AuditReport;
+
+  /**
+   * Statut de génération du rapport IA.
+   */
+  reportStatus?: "success" | "fallback";
+  reportError?: string | null;
 }
 
 export interface AuditErrorResult {

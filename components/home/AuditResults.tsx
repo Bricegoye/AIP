@@ -8,6 +8,7 @@ import ScoreGauge from "./ScoreGauge";
 import DataLayerInspector from "./DataLayerInspector";
 import TechnicalEvidenceInspector from "./TechnicalEvidenceInspector";
 import ConsentInspector from "./ConsentInspector";
+import KPIRecommendations from "./KPIRecommendations";
 
 interface AuditResultsProps {
   result: AuditSuccessResult;
@@ -307,6 +308,10 @@ export default function AuditResults({
 
           </div>
         </div>
+        {/* KPI Engine V1 */}
+{result.kpis && (
+  <KPIRecommendations kpis={result.kpis} />
+)}
 
         {/* Executive Summary */}
         <div className="mt-12 border-t border-slate-200 pt-10">

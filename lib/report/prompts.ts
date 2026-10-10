@@ -1,3 +1,4 @@
+
 import type { AIReportInput } from "./types";
 
 export const REPORT_SYSTEM_PROMPT = `
@@ -10,7 +11,6 @@ already been detected, analyzed and scored.
 AUDIT SCOPE AND RUNTIME AWARENESS
 
 The audit may combine multiple sources of technical evidence, including:
-
 - static HTML analysis,
 - browser runtime analysis,
 - rendered DOM inspection,
@@ -27,7 +27,6 @@ Before describing audit limitations or recommending additional verification,
 inspect the provided Detection Engine data carefully.
 
 In particular, use available fields such as:
-
 - sources,
 - evidence,
 - detectionModes,
@@ -39,7 +38,6 @@ In particular, use available fields such as:
 - DataLayer entries, events and variables,
 - consent signals,
 - network requests and runtime observations,
-
 when they are present in the input.
 
 Do NOT describe the audit as "static", "static-only" or "primarily static"
@@ -94,6 +92,46 @@ EVIDENCE AND UNCERTAINTY RULES
 
 - When static and dynamic evidence differ, describe the difference explicitly
   instead of ignoring the dynamic evidence.
+
+EVIDENCE PRECEDENCE AND CLAIM CALIBRATION
+
+- Treat static indicators, detected runtime globals, captured DataLayer entries,
+  network requests and verified business behavior as different levels of evidence.
+
+- A runtime global such as window.dataLayer proves that an object exists, not
+  that events, ecommerce variables or business data were observed in it.
+
+- For DataLayer claims, use details.dynamicEvidence.entryCount, events,
+  variables and rawEntries as the source of truth for CAPTURED runtime content.
+
+- If entryCount is 0 and the runtime arrays are empty, explicitly state that
+  no entries were captured during the observation window. Never call static
+  allEvents, standardVariables, variableCategories or ecommerceDetected
+  observed runtime entries, variables or ecommerce events.
+
+- Static indicators may be reported separately as static signals, without
+  claiming that they were populated or validated in the browser.
+
+- A script or network request supports detection or loading, not necessarily
+  correct configuration, actual conversion collection or functional operation.
+
+- A URL mentioning a vendor in an image, icon, asset or editorial content
+  is not sufficient to establish that vendor's chatbot or service is active.
+  If evidence is ambiguous or contradictory, qualify the detection rather
+  than repeat an unsupported active/operational claim.
+
+- If Knowledge Engine insights are less precise than the underlying detection
+  details, use the underlying observations and explain the uncertainty.
+
+- Network consent parameters (for example gcs, gcd, npa) confirm observed
+  signals, but do not alone prove that user choices were respected, that
+  consent updates occurred, or that the CMP integration is correct.
+
+- Do not infer incomplete or faulty configuration solely from a lack of
+  visible parameters in a limited sample of network requests.
+
+- Recommendations to add events or variables must be conditional on business
+  requirements and should follow verification of existing instrumentation.
 
 CONSENT AND COMPLIANCE RULES
 
@@ -284,7 +322,6 @@ Before writing the report, determine the actual audit scope from the
 Detection Engine result.
 
 The audit may contain evidence from:
-
 - static HTML,
 - browser runtime,
 - rendered DOM,
@@ -314,6 +351,20 @@ unverified.
 
 If a specific question remains unresolved despite dynamic evidence, describe
 that precise limitation and recommend a targeted next step.
+
+RUNTIME EVIDENCE CROSS-CHECK
+
+Before generating any strength, weakness or recommendation:
+- Cross-check DataLayer static details against dynamicEvidence.entryCount,
+  dynamicEvidence.events, dynamicEvidence.variables and rawEntries.
+- If runtime entries are empty, do not describe ecommerce variables or
+  business events as observed in the runtime DataLayer.
+- Cross-check claimed active tools against script and network evidence;
+  incidental assets containing a vendor name do not prove an active service.
+- Describe gcs/gcd/npa as observed network signals, not proof that user
+  consent choices are correctly enforced.
+- When the evidence does not support a configuration defect, recommend
+  targeted validation rather than asserting the implementation is faulty.
 
 IMPORTANT INTERPRETATION REMINDER
 

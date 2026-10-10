@@ -1,8 +1,8 @@
-// lib/orchestrator/api-orchestrator.ts
 
 import { DetectionEngine } from "@/lib/detectors/detection-engine";
 import { KnowledgeEngine } from "@/lib/knowledge/knowledge-engine";
 import { ScoringEngine } from "@/lib/scoring/scoring-engine";
+import { KPIEngine } from "@/lib/kpi/kpi-engine";
 
 import { AIReportEngine } from "@/lib/report/ai-report-engine";
 import { OpenAIClient } from "@/lib/ai/openai-client";
@@ -16,6 +16,7 @@ export class APIOrchestrator {
   private readonly detectionEngine: DetectionEngine;
   private readonly knowledgeEngine: KnowledgeEngine;
   private readonly scoringEngine: ScoringEngine;
+  private readonly kpiEngine: KPIEngine;
   private readonly reportEngine: AIReportEngine;
 
   constructor() {
@@ -27,6 +28,9 @@ export class APIOrchestrator {
 
     this.scoringEngine =
       new ScoringEngine();
+
+    this.kpiEngine =
+      new KPIEngine();
 
     const aiClient =
       new OpenAIClient();
@@ -40,8 +44,7 @@ export class APIOrchestrator {
    * la génération du rapport IA échoue.
    *
    * L'objectif est de conserver l'audit technique
-   * (détection, DataLayer, scoring...) au lieu de
-   * faire échouer l'audit complet.
+   * au lieu de faire échouer l'audit complet.
    */
   private createFallbackReport(
     language: ReportLanguage,
@@ -107,28 +110,18 @@ export class APIOrchestrator {
     try {
       /**
        * 1. Detection
-       *
-       * Étape critique.
        */
       const detection =
-        await this.detectionEngine.analyze(
-          url
-        );
+        await this.detectionEngine.analyze(url);
 
       /**
        * 2. Knowledge
-       *
-       * Étape critique.
        */
       const knowledge =
-        this.knowledgeEngine.analyze(
-          detection
-        );
+        this.knowledgeEngine.analyze(detection);
 
       /**
        * 3. Scoring
-       *
-       * Étape critique.
        */
       const scoring =
         this.scoringEngine.calculate(
@@ -136,13 +129,21 @@ export class APIOrchestrator {
         );
 
       /**
-       * 4. Rapport IA
+       * 4. KPI Engine V1
+       *
+       * Génère des recommandations de KPIs.
+       * Ne calcule aucune donnée de performance.
+       */
+      const kpis =
+        this.kpiEngine.analyze({
+          url,
+          tools: knowledge.tools ?? [],
+        });
+
+      /**
+       * 5. Rapport IA
        *
        * Étape non critique.
-       *
-       * Une erreur de génération IA ne doit pas
-       * supprimer les résultats techniques déjà
-       * collectés.
        */
       let report: AIReport;
 
@@ -186,7 +187,7 @@ export class APIOrchestrator {
       }
 
       /**
-       * 5. Résultat final
+       * 6. Résultat final
        */
       return {
         success: true,
@@ -203,25 +204,18 @@ export class APIOrchestrator {
 
         scoring,
 
+        /**
+         * Nouveau : recommandations KPI.
+         */
+        kpis,
+
         report,
 
-        /**
-         * Permettra à l'interface de distinguer
-         * un vrai rapport IA d'un fallback.
-         */
         reportStatus,
 
         reportError,
       };
     } catch (error) {
-      /**
-       * Ce catch reste réservé aux erreurs
-       * critiques :
-       *
-       * - Detection
-       * - Knowledge
-       * - Scoring
-       */
       console.error("[AIP]", error);
 
       return {
