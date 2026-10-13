@@ -1,7 +1,17 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  serverExternalPackages: [
+    "playwright",
+    "playwright-core",
+  ],
+
+  outputFileTracingIncludes: {
+    "/api/agent": [
+      "./node_modules/playwright/**/*",
+      "./node_modules/playwright-core/**/*",
+    ],
+  },
 };
 
 export default nextConfig;
