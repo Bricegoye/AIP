@@ -157,9 +157,22 @@ export class BrowserEngine {
     };
 
     try {
-      browser = await chromium.launch({
-        headless: true,
-      });
+      browser = process.env.VERCEL === "1"
+      ? await (async () => {
+          const { default: serverlessChromium } = await import("@sparticuz/chromium");
+          return chromium.launch({
+            args: serverlessChromium.args,
+            executablePath: await serverlessChromium.executablePath(),
+            headless: true,
+            timeout: 30_000,
+          });
+        })()
+      : await chromium.launch({ headless: true, timeout: 30_000 });
+
+    console.info("[AIP Browser Engine] Chromium launched", {
+      environment: process.env.VERCEL === "1" ? "vercel" : "local",
+      version: browser.version(),
+    });
 
       const context =
         await browser.newContext({
