@@ -4,120 +4,98 @@ function unique(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))];
 }
 
-function detectVariables(html: string, variables: string[]): string[] {
-  return variables.filter((variable) =>
-    new RegExp(`["']?${variable}["']?\\s*:`, "i").test(html)
-  );
+export const DATA_LAYER_VARIABLE_GROUPS = {
+  navigation: [
+    "page_name", "pageName", "page_type", "pageType", "page_category", "pageCategory",
+    "page_location", "pageLocation", "page_referrer", "pageReferrer", "page_title", "pageTitle",
+    "virtualPageURL", "page_url", "pageUrl", "brand", "language", "country", "deviceType",
+    "siteOwner", "siteTarget", "siteFamily", "siteTypeLevel1", "siteTypeLevel2",
+    "pageTarget", "pageVariant", "rumTarget",
+  ],
+  user: [
+    "user_id", "userId", "user_status", "userStatus", "login_status", "loginStatus",
+    "customer_type", "customerType",
+  ],
+  commerce: [
+    "currency", "value", "transaction_id", "transactionId", "coupon", "payment_type", "paymentType",
+    "vehicleCategory", "vehicleModelBodystyle", "vehicleModelBodystyleLabel", "vehicleEngineType",
+  ],
+  ecommerce: [
+    "ecommerce", "items", "item_id", "itemId", "item_name", "itemName",
+    "item_category", "itemCategory", "quantity", "price",
+  ],
+  form: [
+    "form_name", "formName", "formsName", "form_step", "formStep", "form_type", "formType",
+    "lead_type", "leadType", "mainStepName", "mainStepIndicator",
+  ],
+  search: ["search_term", "searchTerm", "search_results", "searchResults"],
+} as const;
+
+export type DataLayerVariableCategory = keyof typeof DATA_LAYER_VARIABLE_GROUPS;
+export type DataLayerVariableCategories = Record<DataLayerVariableCategory, string[]>;
+
+function normalizeVariableName(value: string): string {
+  return value.replace(/[_-]/g, "").toLowerCase();
 }
 
-const TECHNICAL_PLATFORM_EVENTS = new Set([
-  "dyuaevent",
-]);
+/** Classify observed key paths, preserving their original spelling. */
+export function classifyDataLayerVariables(paths: string[]): {
+  standardVariables: string[];
+  standardVariableCount: number;
+  variableCategories: DataLayerVariableCategories;
+} {
+  const variableCategories: DataLayerVariableCategories = {
+    navigation: [], user: [], commerce: [], ecommerce: [], form: [], search: [],
+  };
+
+  for (const path of unique(paths)) {
+    // Exclude gtag command arguments and GTM's internal bookkeeping.
+    if (/^\d+(?:[.\[]|$)/.test(path) || /^gtm(?:\.|$)/i.test(path)) continue;
+    const segments = path.replace(/\[\d+\]/g, "").split(".");
+    const name = normalizeVariableName(segments[segments.length - 1] ?? "");
+    for (const category of Object.keys(variableCategories) as DataLayerVariableCategory[]) {
+      if (DATA_LAYER_VARIABLE_GROUPS[category].some((candidate) => normalizeVariableName(candidate) === name)) {
+        variableCategories[category].push(path);
+      }
+    }
+  }
+
+  const standardVariables = unique(Object.values(variableCategories).flat());
+  return { standardVariables, standardVariableCount: standardVariables.length, variableCategories };
+}
+
+function detectVariables(html: string): string[] {
+  return unique(Object.values(DATA_LAYER_VARIABLE_GROUPS).flat()).filter((variable) => {
+    const escaped = variable.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // Match a complete property name rather than a suffix such as preview_value.
+    return new RegExp(`(?:["']${escaped}["']|\\b${escaped})\\s*:`, "i").test(html);
+  });
+}
+
+const TECHNICAL_PLATFORM_EVENTS = new Set(["dyuaevent"]);
 
 function isTechnicalEvent(event: string): boolean {
-  const normalizedEvent = event.toLowerCase();
-
-  return (
-    normalizedEvent.startsWith("gtm.") ||
-    TECHNICAL_PLATFORM_EVENTS.has(normalizedEvent)
-  );
+  const normalized = event.toLowerCase();
+  return normalized.startsWith("gtm.") || TECHNICAL_PLATFORM_EVENTS.has(normalized);
 }
 
 function isConsentEvent(event: string): boolean {
   return /consent|gdpr|cookie|optanon|didomi|onetrust/i.test(event);
 }
 
-const NAVIGATION_VARIABLES = [
-  "page_name",
-  "page_type",
-  "page_category",
-  "page_location",
-  "page_referrer",
-  "page_title",
-];
-
-const USER_VARIABLES = [
-  "user_id",
-  "user_status",
-  "login_status",
-  "customer_type",
-];
-
-const COMMERCE_VARIABLES = [
-  "currency",
-  "value",
-  "transaction_id",
-  "coupon",
-  "payment_type",
-];
-
-const ECOMMERCE_VARIABLES = [
-  "ecommerce",
-  "items",
-  "item_id",
-  "item_name",
-  "item_category",
-  "quantity",
-  "price",
-];
-
-const FORM_VARIABLES = [
-  "form_name",
-  "form_step",
-  "form_type",
-  "lead_type",
-];
-
-const SEARCH_VARIABLES = [
-  "search_term",
-  "search_results",
-];
-
 export function detectDataLayer(html: string): AnalyticsToolDetection {
-  const windowDataLayerDetected =
-    /window\.dataLayer|dataLayer\s*=|dataLayer\s*\|\|\s*\[\]/i.test(html);
-
+  const windowDataLayerDetected = /window\.dataLayer|dataLayer\s*=|dataLayer\s*\|\|\s*\[\]/i.test(html);
   const pushDetected = /dataLayer\.push\s*\(/i.test(html);
-
   const eventMatches = [
-    ...html.matchAll(/event\s*:\s*["']([^"']+)["']/gi),
+    ...html.matchAll(/\bevent\s*:\s*["']([^"']+)["']/gi),
     ...html.matchAll(/["']event["']\s*:\s*["']([^"']+)["']/gi),
   ];
-
   const allEvents = unique(eventMatches.map((match) => match[1]));
-
   const internalEvents = allEvents.filter(isTechnicalEvent);
-
-  const businessEvents = allEvents.filter(
-    (event) => !isTechnicalEvent(event) && !isConsentEvent(event)
-  );
-
-  const navigationVariables = detectVariables(html, NAVIGATION_VARIABLES);
-  const userVariables = detectVariables(html, USER_VARIABLES);
-  const commerceVariables = detectVariables(html, COMMERCE_VARIABLES);
-  const ecommerceVariables = detectVariables(html, ECOMMERCE_VARIABLES);
-  const formVariables = detectVariables(html, FORM_VARIABLES);
-  const searchVariables = detectVariables(html, SEARCH_VARIABLES);
-
-  const standardVariables = unique([
-    ...navigationVariables,
-    ...userVariables,
-    ...commerceVariables,
-    ...ecommerceVariables,
-    ...formVariables,
-    ...searchVariables,
-  ]);
-
-  const ecommerceDetected =
-    /ecommerce\s*:|["']ecommerce["']\s*:|items\s*:|["']items["']\s*:/i.test(
-      html
-    );
-
-  const consentSignals =
-    /gtag\(["']consent|consent\.default|gdprconsent|Cookiebot|didomi|onetrust|optanon/i.test(
-      html
-    );
-
+  const businessEvents = allEvents.filter((event) => !isTechnicalEvent(event) && !isConsentEvent(event));
+  const classification = classifyDataLayerVariables(detectVariables(html));
+  const ecommerceDetected = /\becommerce\s*:|["']ecommerce["']\s*:|\bitems\s*:|["']items["']\s*:/i.test(html);
+  const consentSignals = /gtag\(\s*["']consent|consent\.default|gdprconsent|Cookiebot|didomi|onetrust|optanon/i.test(html);
   const present = windowDataLayerDetected || pushDetected;
 
   return {
@@ -125,10 +103,8 @@ export function detectDataLayer(html: string): AnalyticsToolDetection {
     key: "datalayer",
     vendor: "Google",
     category: "DataLayer",
-    documentationUrl:
-      "https://developers.google.com/tag-platform/tag-manager/datalayer",
-    description:
-      "Le DataLayer est une couche de données utilisée pour transmettre des informations métier à Google Tag Manager et aux solutions Analytics.",
+    documentationUrl: "https://developers.google.com/tag-platform/tag-manager/datalayer",
+    description: "Le DataLayer est une couche de données utilisée pour transmettre des informations métier à Google Tag Manager et aux solutions Analytics.",
     present,
     status: present ? "Détecté directement" : "Non détecté",
     ids: [],
@@ -139,24 +115,11 @@ export function detectDataLayer(html: string): AnalyticsToolDetection {
     sources: present ? ["HTML statique", "Script inline"] : [],
     certainty: present ? "Élevé" : "Faible",
     details: {
-      windowDataLayerDetected,
-      pushDetected,
-      allEvents,
-      internalEvents,
-      businessEvents,
+      windowDataLayerDetected, pushDetected, allEvents, internalEvents, businessEvents,
       eventCount: allEvents.length,
       internalEventCount: internalEvents.length,
       businessEventCount: businessEvents.length,
-      standardVariables,
-      standardVariableCount: standardVariables.length,
-      variableCategories: {
-        navigation: navigationVariables,
-        user: userVariables,
-        commerce: commerceVariables,
-        ecommerce: ecommerceVariables,
-        form: formVariables,
-        search: searchVariables,
-      },
+      ...classification,
       ecommerceDetected,
       consentSignals,
     },

@@ -11,7 +11,7 @@ import type {
 import { detectGTM } from "./gtm-detector";
 import { detectGA4 } from "./ga4-detector";
 import { detectFloodlight } from "./floodlight-detector";
-import { detectDataLayer } from "./datalayer-detector";
+import { detectDataLayer, classifyDataLayerVariables } from "./datalayer-detector";
 import {
   detectAdobeLaunch,
 } from "./adobe-launch-detector";
@@ -272,6 +272,20 @@ function enrichDataLayerDetails(
       isEcommerceEvent
     );
 
+  const existingCategories =
+    typeof baseDetails.variableCategories === "object" &&
+    baseDetails.variableCategories !== null
+      ? baseDetails.variableCategories as Record<string, unknown>
+      : {};
+
+  const dynamicVariables = getStringArray(dynamicDetails.variables);
+  const existingVariables = getStringArray(baseDetails.standardVariables);
+  const classification = classifyDataLayerVariables(unique([
+    ...existingVariables,
+    ...Object.values(existingCategories).flatMap(getStringArray),
+    ...dynamicVariables,
+  ]));
+
   const dynamicEntryCount =
     getNumber(
       dynamicDetails.entryCount
@@ -280,6 +294,8 @@ function enrichDataLayerDetails(
   return {
     ...baseDetails,
     ...dynamicDetails,
+
+    ...classification,
 
     windowDataLayerDetected:
       baseDetails
