@@ -16,7 +16,7 @@ It combines **static analysis, browser-based runtime inspection, deterministic d
 
 AIP is deployed on Vercel:
 
-**https://agent-ia-lilac.vercel.app/**
+**[https://agent-ia-lilac.vercel.app/](https://aip-analytics.vercel.app/)**
 
 ---
 
